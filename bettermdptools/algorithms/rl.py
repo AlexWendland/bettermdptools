@@ -20,11 +20,14 @@ Assumes no prior knowledge of the type of reward available to the agent.
 Given enough episodes, tries to find an estimate of the optimal policy.
 """
 
+import time
+import warnings
+
 import numpy as np
 from tqdm import tqdm
+
 from bettermdptools.utils.callbacks import MyCallbacks
 from bettermdptools.utils.decorators import print_runtime
-import warnings
 
 
 class RL:
@@ -84,7 +87,8 @@ class RL:
                    init_epsilon=1.0,
                    min_epsilon=0.1,
                    epsilon_decay_ratio=0.9,
-                   n_episodes=10000):
+                   n_episodes=10000,
+                   stats=False):
         """
         Parameters
         ----------------------------
@@ -147,15 +151,8 @@ class RL:
         pi_track = []
         Q = np.zeros((nS, nA), dtype=np.float64)
         Q_track = np.zeros((n_episodes, nS, nA), dtype=np.float64)
-        # Explanation of lambda:
-        # def select_action(state, Q, epsilon):
-        #   if np.random.random() > epsilon:
-        #       return np.argmax(Q[state])
-        #   else:
-        #       return np.random.randint(len(Q[state]))
-        select_action = lambda state, Q, epsilon: np.argmax(Q[state]) \
-            if np.random.random() > epsilon \
-            else np.random.randint(len(Q[state]))
+        def select_action(state, Q, epsilon):
+            return np.argmax(Q[state]) if np.random.random() > epsilon else np.random.randint(len(Q[state]))
         alphas = RL.decay_schedule(init_alpha,
                                 min_alpha,
                                 alpha_decay_ratio,
@@ -164,7 +161,11 @@ class RL:
                                   min_epsilon,
                                   epsilon_decay_ratio,
                                   n_episodes)
+        if stats:
+            collected_stats = []
         for e in tqdm(range(n_episodes), leave=False):
+            if stats:
+                start = time.monotonic()
             self.callbacks.on_episode_begin(self)
             self.callbacks.on_episode(self, episode=e)
             state, info = self.env.reset()
@@ -188,10 +189,14 @@ class RL:
             pi_track.append(np.argmax(Q, axis=1))
             self.render = False
             self.callbacks.on_episode_end(self)
+            if stats:
+                collected_stats.append(time.monotonic() - start)
 
         V = np.max(Q, axis=1)
 
         pi = {s: a for s, a in enumerate(np.argmax(Q, axis=1))}
+        if stats:
+            return Q, V, pi, Q_track, pi_track, collected_stats
         return Q, V, pi, Q_track, pi_track
 
     @print_runtime
@@ -206,7 +211,8 @@ class RL:
               init_epsilon=1.0,
               min_epsilon=0.1,
               epsilon_decay_ratio=0.9,
-              n_episodes=10000):
+              n_episodes=10000,
+              stats=False):
         """
         Parameters
         ----------------------------
@@ -269,15 +275,8 @@ class RL:
         pi_track = []
         Q = np.zeros((nS, nA), dtype=np.float64)
         Q_track = np.zeros((n_episodes, nS, nA), dtype=np.float64)
-        # Explanation of lambda:
-        # def select_action(state, Q, epsilon):
-        #   if np.random.random() > epsilon:
-        #       return np.argmax(Q[state])
-        #   else:
-        #       return np.random.randint(len(Q[state]))
-        select_action = lambda state, Q, epsilon: np.argmax(Q[state]) \
-            if np.random.random() > epsilon \
-            else np.random.randint(len(Q[state]))
+        def select_action(state, Q, epsilon):
+            return np.argmax(Q[state]) if np.random.random() > epsilon else np.random.randint(len(Q[state]))
         alphas = RL.decay_schedule(init_alpha,
                                 min_alpha,
                                 alpha_decay_ratio,
@@ -287,7 +286,12 @@ class RL:
                                   epsilon_decay_ratio,
                                   n_episodes)
 
+        if stats:
+            collected_stats = []
+
         for e in tqdm(range(n_episodes), leave=False):
+            if stats:
+                start = time.monotonic()
             self.callbacks.on_episode_begin(self)
             self.callbacks.on_episode(self, episode=e)
             state, info = self.env.reset()
@@ -312,8 +316,12 @@ class RL:
             pi_track.append(np.argmax(Q, axis=1))
             self.render = False
             self.callbacks.on_episode_end(self)
+            if stats:
+                collected_stats.append(time.monotonic() - start)
 
         V = np.max(Q, axis=1)
 
         pi = {s: a for s, a in enumerate(np.argmax(Q, axis=1))}
+        if stats:
+            return Q, V, pi, Q_track, pi_track, collected_stats
         return Q, V, pi, Q_track, pi_track

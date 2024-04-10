@@ -20,8 +20,12 @@ Assumes prior knowledge of the type of reward available to the agent
 for iterating to an optimal policy and reward value for a given MDP.
 """
 
-import numpy as np
+import time
 import warnings
+
+import numpy as np
+
+from bettermdptools.utils.convergence_function import UtilityConvergenceFunction, get_max_value_less_than_theta
 from bettermdptools.utils.decorators import print_runtime
 
 
@@ -30,21 +34,25 @@ class Planner:
         self.P = P
 
     @print_runtime
-    def value_iteration(self, gamma=1.0, n_iters=1000, theta=1e-10):
+    def value_iteration(
+            self,
+            gamma=1.0,
+            number_of_iterations=1000,
+            convergence_function: UtilityConvergenceFunction = get_max_value_less_than_theta(1e-10),
+            stats = False
+        ):
         """
         PARAMETERS:
 
         gamma {float}:
             Discount factor
 
-        n_iters {int}:
+        number_of_iterations {int}:
             Number of iterations
 
-        theta {float}:
-            Convergence criterion for value iteration.
-            State values are considered to be converged when the maximum difference between new and previous state values is less than theta.
-            Stops at n_iters or theta convergence - whichever comes first.
-
+        convergence_function {UtilityConvergenceFunction}:
+            Function that takes in the past and current values of the utility function and returns a boolean indicating
+            if you have converged.  This is useful for iterative algorithms like value iteration and policy iteration.
 
         RETURNS:
 
@@ -58,41 +66,54 @@ class Planner:
             Policy mapping states to actions.
         """
         V = np.zeros(len(self.P), dtype=np.float64)
-        V_track = np.zeros((n_iters, len(self.P)), dtype=np.float64)
+        V_track = np.zeros((number_of_iterations, len(self.P)), dtype=np.float64)
         i = 0
         converged = False
-        while i < n_iters-1 and not converged:
+        if stats:
+            collected_stats = []
+        while i < number_of_iterations-1 and not converged:
+            if stats:
+                start = time.monotonic()
             i += 1
             Q = np.zeros((len(self.P), len(self.P[0])), dtype=np.float64)
             for s in range(len(self.P)):
                 for a in range(len(self.P[s])):
                     for prob, next_state, reward, done in self.P[s][a]:
                         Q[s][a] += prob * (reward + gamma * V[next_state] * (not done))
-            if np.max(np.abs(V - np.max(Q, axis=1))) < theta:
-                converged = True
-            V = np.max(Q, axis=1)
+            next_v = np.max(Q, axis=1)
+            converged = convergence_function(V, next_v)
+            V = next_v
             V_track[i] = V
+            if stats:
+                collected_stats.append(time.monotonic() - start)
         if not converged:
             warnings.warn("Max iterations reached before convergence.  Check theta and n_iters.  ")
 
         pi = {s:a for s, a in enumerate(np.argmax(Q, axis=1))}
+        if stats:
+            return V, V_track, pi, collected_stats
         return V, V_track, pi
 
     @print_runtime
-    def policy_iteration(self, gamma=1.0, n_iters=50, theta=1e-10):
+    def policy_iteration(
+            self,
+            gamma=1.0,
+            number_of_iterations=50,
+            convergence_function: UtilityConvergenceFunction = get_max_value_less_than_theta(1e-10),
+            stats = False
+        ):
         """
         PARAMETERS:
 
         gamma {float}:
             Discount factor
 
-        n_iters {int}:
+        number_of_iterations {int}:
             Number of iterations
 
-        theta {float}:
-            Convergence criterion for policy evaluation.
-            State values are considered to be converged when the maximum difference between new and previous state
-            values is less than theta.
+        convergence_function {UtilityConvergenceFunction}:
+            Function that takes in the past and current values of the utility function and returns a boolean indicating
+            if you have converged.  This is useful for iterative algorithms like value iteration and policy iteration.
 
 
         RETURNS:
@@ -111,28 +132,35 @@ class Planner:
         pi = {s: a for s, a in enumerate(random_actions)}
         # initial V to give to `policy_evaluation` for the first time
         V = np.zeros(len(self.P), dtype=np.float64)
-        V_track = np.zeros((n_iters, len(self.P)), dtype=np.float64)
+        V_track = np.zeros((number_of_iterations, len(self.P)), dtype=np.float64)
         i = 0
         converged = False
-        while i < n_iters-1 and not converged:
+        if stats:
+            collected_stats = []
+        while i < number_of_iterations-1 and not converged:
+            if stats:
+                start = time.monotonic()
             i += 1
             old_pi = pi
-            V = self.policy_evaluation(pi, V, gamma, theta)
+            V = self.policy_evaluation(pi, V, gamma, convergence_function)
             V_track[i] = V
             pi = self.policy_improvement(V, gamma)
-            if old_pi == pi:
-                converged = True
+            converged = (old_pi == pi)
+            if stats:
+                collected_stats.append(time.monotonic() - start)
         if not converged:
             warnings.warn("Max iterations reached before convergence.  Check n_iters.")
+        if stats:
+            return V, V_track, pi, collected_stats
         return V, V_track, pi
 
-    def policy_evaluation(self, pi, prev_V, gamma=1.0, theta=1e-10):
+    def policy_evaluation(self, pi, prev_V, gamma=1.0, convergence_function = get_max_value_less_than_theta(1e-10)):
         while True:
             V = np.zeros(len(self.P), dtype=np.float64)
             for s in range(len(self.P)):
                 for prob, next_state, reward, done in self.P[s][pi[s]]:
                     V[s] += prob * (reward + gamma * prev_V[next_state] * (not done))
-            if np.max(np.abs(prev_V - V)) < theta:
+            if convergence_function(prev_V - V):
                 break
             prev_V = V.copy()
         return V
