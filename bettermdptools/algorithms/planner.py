@@ -39,7 +39,6 @@ class Planner:
             gamma=1.0,
             number_of_iterations=1000,
             convergence_function: UtilityConvergenceFunction = get_max_value_less_than_theta(1e-10),
-            stats = False
         ):
         """
         PARAMETERS:
@@ -69,11 +68,7 @@ class Planner:
         V_track = np.zeros((number_of_iterations, len(self.P)), dtype=np.float64)
         i = 0
         converged = False
-        if stats:
-            collected_stats = []
         while i < number_of_iterations-1 and not converged:
-            if stats:
-                start = time.monotonic()
             i += 1
             Q = np.zeros((len(self.P), len(self.P[0])), dtype=np.float64)
             for s in range(len(self.P)):
@@ -84,14 +79,10 @@ class Planner:
             converged = convergence_function(V, next_v)
             V = next_v
             V_track[i] = V
-            if stats:
-                collected_stats.append(time.monotonic() - start)
         if not converged:
             warnings.warn("Max iterations reached before convergence.  Check theta and n_iters.  ")
 
         pi = {s:a for s, a in enumerate(np.argmax(Q, axis=1))}
-        if stats:
-            return V, V_track, pi, collected_stats
         return V, V_track, pi
 
     @print_runtime
@@ -160,7 +151,7 @@ class Planner:
             for s in range(len(self.P)):
                 for prob, next_state, reward, done in self.P[s][pi[s]]:
                     V[s] += prob * (reward + gamma * prev_V[next_state] * (not done))
-            if convergence_function(prev_V - V):
+            if convergence_function(prev_V, V):
                 break
             prev_V = V.copy()
         return V
